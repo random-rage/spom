@@ -1,0 +1,20 @@
+OpCode Mnemonic [Argument] Comment
+
+00     NOP                 Do nothing
+01     ADD      [addr]     RX = RX + [addr]
+02     SUB      [addr]     RX = RX - [addr]
+03     INC                 RX++
+04     DEC                 RX--
+05     LDR      [addr]     RX = [addr]
+06     STR      [addr]     [addr] = RX
+07     IN                  RX << IN
+08     OUT                 RX >> OUT
+09     JMP      [addr]     PC = [addr]
+0A     IFZ                 if (RX == 0) exec(); else PC++;
+0B     IFN                 if (RX < 0)  exec(); else PC++;
+0C     HLT                 Stop program execution
+
+11     ADD      val        RX = RX + val
+12     SUB      val        RX = RX - val
+15     LDR      val        RX = val
+19     JMP      val        PC = val
