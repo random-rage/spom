@@ -4,57 +4,60 @@ import javax.swing.*;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.text.BadLocationException;
-import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.File;
 import java.util.Formatter;
 
-public class MainForm extends JFrame implements MachineListener {
-    private Machine machine;
-
+public class MainForm extends JFrame implements IMachineListener
+{
     private JFileChooser fileChooser;
-    private JPanel mainPanel;
-    private JTabbedPane tabPane;
-    private JPanel dbgTab;
-    private JPanel memTab;
-    private JPanel mainTab;
-    private JLabel stateLabel;
-    private JTextField programTextField;
-    private JButton programBrowseButton;
-    private JLabel programLabel;
-    private JButton loadButton;
-    private JButton stopButton;
-    private JButton continueButton;
-    private JPanel inTab;
-    private JPanel outTab;
-    private JTextArea inputBytes;
-    private JLabel inputBytesLabel;
-    private JTextArea inputAscii;
-    private JLabel inputAsciiLabel;
-    private JTextArea outputBytes;
-    private JLabel outputBytesLabel;
-    private JTextArea outputAscii;
-    private JLabel outputAsciiLabel;
-    private JTextField inputTextField;
-    private JButton inputBrowseButton;
-    private JLabel inputLabel;
-    private JTextField outputTextField;
-    private JLabel outputLabel;
-    private JButton outputBrowseButton;
+    private JPanel       mainPanel;
+    private JTabbedPane  tabPane;
+    private JPanel       dbgTab;
+    private JPanel       memTab;
+    private JPanel       mainTab;
+    private JLabel       stateLabel;
+    private JTextField   programTextField;
+    private JButton      programBrowseButton;
+    private JLabel       programLabel;
+    private JButton      loadButton;
+    private JButton      stopButton;
+    private JButton      continueButton;
+    private JPanel       inTab;
+    private JPanel       outTab;
+    private JTextArea    inputBytes;
+    private JLabel       inputBytesLabel;
+    private JLabel       inputAsciiLabel;
+    private JTextArea    outputBytes;
+    private JLabel       outputBytesLabel;
+    private JTextArea    outputAscii;
+    private JLabel       outputAsciiLabel;
     private JRadioButton decRadioButton;
     private JRadioButton hexRadioButton;
-    private JTextArea memTextArea;
-    private JTextArea progMemTextArea;
-    private JButton stepButton;
-    private JLabel rxDecLabel;
-    private JLabel rxHexLabel;
-    private JLabel pcDecLabel;
-    private JLabel pcHexLabel;
-    private JButton clearBtn;
+    private JTextArea    memTextArea;
+    private JTextArea    progMemTextArea;
+    private JButton      stepButton;
+    private JLabel       rxDecLabel;
+    private JLabel       rxHexLabel;
+    private JLabel       pcDecLabel;
+    private JLabel       pcHexLabel;
+    private JButton      clearBtn;
+    private JLabel       libPathLabel;
+    private JTextField   libPathTextField;
+    private JButton      libPathBrowseButton;
+    private JScrollPane  memScrollPane;
+    private JScrollPane  progScrollPane;
+    private JTextArea    inputAscii;
+    private JScrollPane  inputBytesScrollPane;
+    private JScrollPane  inputAsciiScrollPane;
+    private JScrollPane  outputBytesScrollPane;
+    private JScrollPane  outputAsciiScrollPane;
+
+    private Machine machine;
 
     MainForm()
     {
         fileChooser = new JFileChooser();
+        fileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
         setContentPane(mainPanel);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setTitle("SPOM");
@@ -94,57 +97,48 @@ public class MainForm extends JFrame implements MachineListener {
         ActionListener browseAction = e ->
         {
             Object source = e.getSource();
-            if (source == outputBrowseButton)
+            if (fileChooser.showOpenDialog(mainPanel) == JFileChooser.APPROVE_OPTION)
             {
-                if (fileChooser.showSaveDialog(mainPanel) == JFileChooser.APPROVE_OPTION)
-                    outputTextField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-            }
-            else
-            {
-                if (fileChooser.showOpenDialog(mainPanel) == JFileChooser.APPROVE_OPTION)
-                {
-                    if (source == programBrowseButton)
-                        programTextField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-                    else if (source == inputBrowseButton)
-                        inputTextField.setText(fileChooser.getSelectedFile().getAbsolutePath());
-                }
+                if (source == programBrowseButton)
+                    programTextField.setText(fileChooser.getSelectedFile().getAbsolutePath());
+                else if (source == libPathBrowseButton)
+                    libPathTextField.setText(fileChooser.getSelectedFile().getAbsolutePath());
             }
         };
 
         decRadioButton.addChangeListener(memViewChangeListener);
         hexRadioButton.addChangeListener(memViewChangeListener);
         programBrowseButton.addActionListener(browseAction);
-        inputBrowseButton.addActionListener(browseAction);
-        outputBrowseButton.addActionListener(browseAction);
+        libPathBrowseButton.addActionListener(browseAction);
         loadButton.addActionListener(e ->
         {
-            try
-            {
-                String program = machine.loadProgram(new File(programTextField.getText()));
-                machine.stop();
-                progMemTextArea.setText(program);
-                stepButton.setEnabled(true);
-                continueButton.setEnabled(true);
-                stopButton.setEnabled(true);
-                OnPcChanged(machine.getPc());
-            }
-            catch (Exception ex)
-            {
-                JOptionPane.showMessageDialog(mainPanel, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-            }
+             try
+             {
+                 String program = machine.loadProgram(programTextField.getText(), libPathTextField.getText());
+                 machine.stop();
+                 progMemTextArea.setText(program);
+                 stepButton.setEnabled(true);
+                 continueButton.setEnabled(true);
+                 stopButton.setEnabled(true);
+                 OnPcChanged(machine.getPc());
+             }
+             catch (Exception ex)
+             {
+                 JOptionPane.showMessageDialog(mainPanel, ex, "Error", JOptionPane.ERROR_MESSAGE);
+             }
         });
         continueButton.addActionListener(e ->
         {
-            MachineState state = machine.getState();
-            if (state == MachineState.PAUSED || state == MachineState.STOPPED)
-                try
-                {
-                    machine.continueExecution();
-                }
-                catch (Exception ex)
-                {
-                    JOptionPane.showMessageDialog(mainPanel, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                }
+             MachineState state = machine.getState();
+             if (state == MachineState.PAUSED || state == MachineState.STOPPED)
+                 try
+                 {
+                     machine.continueExecution();
+                 }
+                 catch (Exception ex)
+                 {
+                     JOptionPane.showMessageDialog(mainPanel, ex, "Error", JOptionPane.ERROR_MESSAGE);
+                 }
         });
         stopButton.addActionListener(e ->
         {
@@ -155,7 +149,7 @@ public class MainForm extends JFrame implements MachineListener {
             }
             catch (Exception ex)
             {
-                JOptionPane.showMessageDialog(mainPanel, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(mainPanel, ex, "Error", JOptionPane.ERROR_MESSAGE);
             }
         });
         stepButton.addActionListener(e ->
@@ -168,7 +162,7 @@ public class MainForm extends JFrame implements MachineListener {
                 }
                 catch (Exception ex)
                 {
-                    JOptionPane.showMessageDialog(mainPanel, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(mainPanel, ex, "Error", JOptionPane.ERROR_MESSAGE);
                 }
         });
         clearBtn.addActionListener(e ->
@@ -182,19 +176,12 @@ public class MainForm extends JFrame implements MachineListener {
     {
         int[] mem = machine.memoryDump();
         Formatter formatter = new Formatter();
-        String ascii;
 
-        for (int i = 0; i < mem.length; )
-        {
-            ascii = "";
-            for (int j = 0; j < 8; i++, j++)
-            {
-                formatter.format((hexRadioButton.isSelected()) ? "%02x" : "%d", mem[i]);
-                ascii += (char)mem[i];
-                formatter.format(" ");
-            }
-            formatter.format("\t%s\n", ascii);
-        }
+        for (int i = 0; i < mem.length; i++)
+            formatter.format("%08x\t" + ((hexRadioButton.isSelected()) ? "%08x" : "%d") + "\t'%c'\n",
+                             i,
+                             mem[i],
+                             (char)mem[i]);
 
         memTextArea.setText(formatter.toString());
     }

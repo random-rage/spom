@@ -1,36 +1,22 @@
 package ru.rage.spom;
 
+import ru.rage.spoml.ArgType;
+import ru.rage.spoml.Argument;
+import ru.rage.spoml.Command;
+
 import javax.swing.text.BadLocationException;
-import java.io.*;
 import java.util.ArrayList;
+import java.util.Formatter;
 import java.util.List;
-
-interface MachineListener
-{
-    void OnMemoryChanged(int address, int value);
-    void OnRxChanged(int value);
-    void OnPcChanged(int value) throws BadLocationException;
-    int  OnInput();
-    void OnOutput(int output);
-    void OnStateChanged(MachineState newState);
-}
-
-enum MachineState
-{
-    STOPPED,
-    RUNNING,
-    PAUSED
-}
 
 public class Machine
 {
-    private int[] program;      // Machine program memory
-    private int[] offsets;      // Offsets in program memory
-    private int[] memory;       // Machine data memory
-    private int rx, pc;         // Main register and program counter
-    private MachineState state; // Machine state
+    private List<Command> program;      // Machine program memory
+    private int[]         memory;       // Machine data memory
+    private int           rx, pc;       // Main register and program counter
+    private MachineState  state;        // Machine state
 
-    private List<MachineListener> listeners;
+    private List<IMachineListener> listeners;
 
     public Machine()
     {
@@ -41,7 +27,7 @@ public class Machine
         state = MachineState.STOPPED;
     }
 
-    void addListener(MachineListener listener)
+    void addListener(IMachineListener listener)
     {
         listeners.add(listener);
     }
@@ -52,11 +38,6 @@ public class Machine
         return memory;
     }
 
-    public int getMemory(int address)
-    {
-        return memory[address];
-    }
-
     private void setMemory(int address, int value)
     {
         if (address >= memory.length || address < 0)
@@ -64,7 +45,7 @@ public class Machine
 
         memory[address] = value;
 
-        for (MachineListener listener : listeners)
+        for (IMachineListener listener : listeners)
             listener.OnMemoryChanged(address, value);
     }
     //endregion
@@ -73,7 +54,7 @@ public class Machine
     private void setRx(int value)
     {
         rx = value;
-        for (MachineListener listener : listeners)
+        for (IMachineListener listener : listeners)
             listener.OnRxChanged(value);
     }
 
@@ -82,17 +63,16 @@ public class Machine
         return pc;
     }
 
-    private void setPc(int value) throws IllegalArgumentException, BadLocationException
+    private void setPc(int value) throws BadLocationException
     {
         pc = value;
-        for (MachineListener listener : listeners)
+        for (IMachineListener listener : listeners)
             listener.OnPcChanged(value);
     }
 
-    private int incPc() throws IllegalArgumentException, BadLocationException
+    private void incPc() throws BadLocationException
     {
         setPc(pc + 1);
-        return pc;
     }
     //endregion
 
@@ -101,178 +81,135 @@ public class Machine
         return state;
     }
 
-    private static int getCommandLength(int opcode)
-    {
-        opcode &= 0x0f;
-        if ((opcode > 0 && opcode < 3) || (opcode > 4 && opcode < 7) || opcode == 9)
-            return 2;
-        else
-            return 1;
-    }
-
     //region Machine control
-    /**
-     * Loads executable file into program memory
-     * @param file SPOM executable program file
-     * @throws IOException if file not found or file read error
-     */
-    String loadProgram(File file) throws IOException
+
+    String loadProgram(String file, String libPath) throws Exception
     {
-        String str = new String();
-        FileInputStream fin = new FileInputStream(file);
-        int len = (int) file.length();
-        boolean skip = false;
+        Loader loader = new Loader(file, libPath);
+        program = loader.getCode();
+        int[] data = loader.getData();
 
-        program = new int[len + 1];
-        offsets = new int[len];
+        int memLen = (data.length > memory.length) ? memory.length : data.length;
+        System.arraycopy(data, 0, memory, 0, memLen);
 
-        for (int i = 0, j = 0; i < len; i++)
-        {
-            program[i] = fin.read();
-            if (skip)
-            {
-                skip = false;
-                str = String.format("%s %02x\n", str, program[i]);
-            }
-            else
-            {
-                skip = getCommandLength(program[i]) == 2;
-                offsets[j++] = i;
+        Formatter formatter = new Formatter();
+        for (Command cmd : program)
+            formatter.format("%s\n", cmd);
 
-                str = String.format("%s%02x", str, program[i]);
-                if (!skip)
-                    str += "\n";
-            }
-        }
-        return str;
+        return formatter.toString();
     }
 
-    /**
-     * Continues program memory execution
-     * @throws NotActiveException if no input listeners found
-     */
-    void continueExecution() throws NotActiveException, IllegalArgumentException, BadLocationException
+    void continueExecution() throws BadLocationException, MachineException
     {
-        int offset = offsets[pc];
-
         state = MachineState.RUNNING;
-        for (MachineListener listener : listeners)
+        for (IMachineListener listener : listeners)
             listener.OnStateChanged(state);
 
-        while (offset < offsets.length)
-        {
-            if (!exec(program[offset], program[offset + 1]))
-            {
-                stop();
-                return;
-            }
-            incPc();
-            if (pc + 1 < offsets.length)
-                offset = offsets[pc];
-            else
-                offset = program.length;
-        }
-        stop();
+        while (step()) ;
     }
 
-    /**
-     * Performs step in program execution
-     * @throws NotActiveException
-     */
-    void step() throws NotActiveException, IllegalArgumentException, BadLocationException
+    boolean step() throws BadLocationException, MachineException
     {
-        if (pc + 1 > offsets.length || !exec(program[offsets[pc]], program[offsets[pc] + 1]))
+        if (pc >= program.size() || !exec(program.get(pc)))
         {
             stop();
-            return;
+            return false;
         }
         incPc();
 
         state = MachineState.PAUSED;
-
-        for (MachineListener listener : listeners)
+        for (IMachineListener listener : listeners)
             listener.OnStateChanged(state);
+
+        return true;
     }
 
-    void stop() throws IllegalArgumentException, BadLocationException
+    void stop() throws BadLocationException
     {
         setPc(0);
         setRx(0);
         state = MachineState.STOPPED;
 
-        for (MachineListener listener : listeners)
+        for (IMachineListener listener : listeners)
             listener.OnStateChanged(state);
     }
     //endregion
 
-    /**
-     * Performs program instruction execution
-     * @param opcode Operation code
-     * @param arg Instruction argument
-     * @return False if machine stops
-     * @throws NotActiveException if no input listeners found
-     * @throws IllegalArgumentException if opcode is unknow
-     */
-    private boolean exec(int opcode, int arg) throws NotActiveException, IllegalArgumentException, BadLocationException
+    private boolean exec(Command cmd) throws BadLocationException, MachineException
     {
-        switch (opcode)
+        Argument arg = cmd.getArg();
+        switch (cmd.getType())
         {
-            case 0:
+            case NOP:
                 break;
-            case 1:
-                setRx(rx + memory[arg]);
+
+            case ADD:
+                if (arg.getType() == ArgType.INDIRECT)
+                    setRx(rx + memory[arg.getValue()]);
+                else if (arg.getType() == ArgType.IMMEDIATE)
+                    setRx(rx + arg.getValue());
                 break;
-            case 2:
-                setRx(rx - memory[arg]);
+
+            case SUB:
+                if (arg.getType() == ArgType.INDIRECT)
+                    setRx(rx - memory[arg.getValue()]);
+                else if (arg.getType() == ArgType.IMMEDIATE)
+                    setRx(rx - arg.getValue());
                 break;
-            case 3:
+
+            case INC:
                 setRx(rx + 1);
                 break;
-            case 4:
-                setRx(rx + 1);
+
+            case DEC:
+                setRx(rx - 1);
                 break;
-            case 5:
-                setRx(memory[arg]);
+
+            case LDR:
+                if (arg.getType() == ArgType.INDIRECT)
+                    setRx(memory[arg.getValue()]);
+                else if (arg.getType() == ArgType.IMMEDIATE)
+                    setRx(arg.getValue());
                 break;
-            case 6:
-                setMemory(arg, rx);
+
+            case STR:
+                if (arg.getType() == ArgType.INDIRECT)
+                    setMemory(arg.getValue(), rx);
                 break;
-            case 7:
+
+            case IN:
                 if (listeners.size() < 1)
-                    throw new NotActiveException("No input listeners");
+                    throw new MachineException("No input listeners");
                 setRx(listeners.get(0).OnInput());
                 break;
-            case 8:
-                for (MachineListener listener : listeners)
+
+            case OUT:
+                for (IMachineListener listener : listeners)
                     listener.OnOutput(rx);
                 break;
-            case 9:
-                setPc(memory[arg] - 1);
+
+            case JMP:
+                if (arg.getType() == ArgType.INDIRECT)
+                    setPc(memory[arg.getValue()] - 1);
+                else if (arg.getType() == ArgType.IMMEDIATE)
+                    setPc(arg.getValue() - 1);
                 break;
-            case 10:
+
+            case IFZ:
                 if (rx != 0)
                     incPc();
                 break;
-            case 11:
+
+            case IFN:
                 if (rx >= 0)
                     incPc();
                 break;
-            case 12:
+
+            case HLT:
                 return false;
-            case 17:
-                setRx(rx + arg);
-                break;
-            case 18:
-                setRx(rx + arg);
-                break;
-            case 21:
-                setRx(arg);
-                break;
-            case 25:
-                setPc(arg - 1);
-                break;
+
             default:
-                throw new IllegalArgumentException(String.format("Illegal opcode: %d", opcode));
+                throw new MachineException("Unknow command: %s", cmd);
         }
         return true;
     }
