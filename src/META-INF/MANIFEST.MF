@@ -1,0 +1,4 @@
+Manifest-Version: 1.0
+Class-Path: spoml.jar
+Main-Class: ru.rage.spom.Program
+
